@@ -6,6 +6,7 @@ import DebtAnalysis from './pages/DebtAnalysis'
 import CustomerList from './pages/CustomerList'
 import BusinessType from './pages/BusinessType'
 import DebtClassification from './pages/DebtClassification'
+import CongNoReport       from './pages/CongNoReport'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -21,6 +22,7 @@ export default function App() {
             <Route path="/customers"     element={<CustomerList />} />
             <Route path="/business-type" element={<BusinessType />} />
             <Route path="/debt-classification" element={<DebtClassification />} />
+            <Route path="/congno-report"      element={<CongNoReport />}       />
           </Routes>
         </main>
       </div>
