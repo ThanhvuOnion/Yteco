@@ -7,13 +7,15 @@ import CategoryIcon       from '@mui/icons-material/Category'
 import WarningAmberIcon   from '@mui/icons-material/WarningAmber'
 import MenuOpenIcon       from '@mui/icons-material/MenuOpen'
 import MenuIcon           from '@mui/icons-material/Menu'
+import AssessmentIcon     from '@mui/icons-material/Assessment'
 
 const NAV_ITEMS = [
-  { to: '/',              Icon: DashboardIcon,    label: 'Tổng quan'            },
-  { to: '/debt-analysis', Icon: BarChartIcon,     label: 'Phân tích Công Nợ'    },
-  { to: '/customers',     Icon: PeopleAltIcon,    label: 'Danh sách Khách Hàng' },
-  { to: '/business-type', Icon: CategoryIcon,     label: 'Loại Hình Kinh Doanh' },
-  { to: '/debt-classification', Icon: WarningAmberIcon, label: 'Phân Loại Công Nợ'   },
+  { to: '/',                Icon: DashboardIcon,    label: 'Tổng quan'              },
+  { to: '/debt-analysis',   Icon: BarChartIcon,     label: 'Phân tích Công Nợ'      },
+  { to: '/customers',       Icon: PeopleAltIcon,    label: 'Danh sách Khách Hàng'   },
+  { to: '/business-type',   Icon: CategoryIcon,     label: 'Loại Hình Kinh Doanh'   },
+  { to: '/debt-classification', Icon: WarningAmberIcon, label: 'Phân Loại Công Nợ' },
+  { to: '/congno-report',   Icon: AssessmentIcon,   label: 'TL Công Nợ Quá Hạn'    },
 ]
 
 export default function Sidebar({ isOpen, onToggle }) {
