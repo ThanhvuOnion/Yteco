@@ -24,9 +24,9 @@ export function SelectFilter({ value, onChange, options, placeholder }) {
       onChange={e => onChange(e.target.value)}
       className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
     >
-      <option value="">{placeholder}</option>
+      {placeholder && <option value="">{placeholder}</option>}
       {options.map(opt => (
-        <option key={opt.value ?? opt} value={opt.value ?? opt}>
+        <option key={opt.value ?? opt} value={opt.value ?? opt} disabled={opt.disabled}>
           {opt.label ?? opt}
         </option>
       ))}
