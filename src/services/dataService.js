@@ -90,46 +90,6 @@ export function sortBy(arr, field, direction = 'desc') {
   })
 }
 
-// ─── KPI ─────────────────────────────────────────────────────────────────────
-
-export function getKpis() {
-  let totalAmount   = 0
-  let overdueAmount = 0
-  let overdueCount  = 0
-  let loai2Count    = 0
-  let customerCount = 0
-  const seenCustomers = []
-
-  for (const r of allRecords) {
-    const bal = r.CloseBal || 0
-    totalAmount += bal
-
-    if (!seenCustomers.includes(r.CustomerCode)) {
-      seenCustomers.push(r.CustomerCode)
-      customerCount += 1
-    }
-
-    if (r.overdueDays > 0) {
-      overdueAmount += bal
-      overdueCount  += 1
-    }
-
-    if (r.phanLoaiCongNo === 'Loại 2') {
-      loai2Count += 1
-    }
-  }
-
-  return {
-    totalAmount,
-    overdueAmount,
-    overdueCount,
-    totalRecords:  allRecords.length,
-    customerCount,
-    loai2Count,
-    overdueRate: totalAmount > 0 ? (overdueAmount / totalAmount) * 100 : 0,
-  }
-}
-
 // ─── Aggregated views ─────────────────────────────────────────────────────────
 
 export function getDebtByBranch() {
@@ -163,24 +123,6 @@ export function getDebtByNhomLoaiHinh() {
   }
 
   return sortBy(Object.values(byNhom), 'value')
-}
-
-export function getDebtByYear() {
-  const byYear = {}
-
-  for (const r of allRecords) {
-    const key = r.docYear || 'N/A'
-    if (!byYear[key]) {
-      byYear[key] = { year: key, totalAmount: 0, overdueAmount: 0, count: 0 }
-    }
-    byYear[key].totalAmount += r.CloseBal || 0
-    byYear[key].count       += 1
-    if (r.overdueDays > 0) {
-      byYear[key].overdueAmount += r.CloseBal || 0
-    }
-  }
-
-  return sortBy(Object.values(byYear), 'year', 'asc')
 }
 
 export function getDebtByYearAndBranch() {

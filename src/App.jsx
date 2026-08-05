@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Sidebar      from './components/Sidebar'
-import Overview     from './pages/Overview'
 import DebtAnalysis from './pages/DebtAnalysis'
 import CustomerList from './pages/CustomerList'
 import BusinessType from './pages/BusinessType'
@@ -17,12 +16,12 @@ export default function App() {
         <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(prev => !prev)} />
         <main className="flex-1 overflow-y-auto">
           <Routes>
-            <Route path="/"              element={<Overview />}     />
+            <Route path="/"              element={<Navigate to="/congno-report" replace />} />
+            <Route path="/congno-report"      element={<CongNoReport />}       />
             <Route path="/debt-analysis" element={<DebtAnalysis />} />
             <Route path="/customers"     element={<CustomerList />} />
             <Route path="/business-type" element={<BusinessType />} />
             <Route path="/debt-classification" element={<DebtClassification />} />
-            <Route path="/congno-report"      element={<CongNoReport />}       />
           </Routes>
         </main>
       </div>

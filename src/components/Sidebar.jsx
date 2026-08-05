@@ -1,6 +1,5 @@
 import { NavLink } from 'react-router-dom'
 import ytecoLogo from '../assets/yteco.jpg'
-import DashboardIcon      from '@mui/icons-material/Dashboard'
 import BarChartIcon       from '@mui/icons-material/BarChart'
 import PeopleAltIcon      from '@mui/icons-material/PeopleAlt'
 import CategoryIcon       from '@mui/icons-material/Category'
@@ -10,12 +9,11 @@ import MenuIcon           from '@mui/icons-material/Menu'
 import AssessmentIcon     from '@mui/icons-material/Assessment'
 
 const NAV_ITEMS = [
-  { to: '/',                Icon: DashboardIcon,    label: 'Tổng quan'              },
-  { to: '/debt-analysis',   Icon: BarChartIcon,     label: 'Phân tích Công Nợ'      },
-  { to: '/customers',       Icon: PeopleAltIcon,    label: 'Danh sách Khách Hàng'   },
-  { to: '/business-type',   Icon: CategoryIcon,     label: 'Loại Hình Kinh Doanh'   },
-  { to: '/debt-classification', Icon: WarningAmberIcon, label: 'Phân Loại Công Nợ' },
-  { to: '/congno-report',   Icon: AssessmentIcon,   label: 'TL Công Nợ Quá Hạn'    },
+  { to: '/congno-report',       Icon: AssessmentIcon,   label: 'Tỷ Lệ Công Nợ Quá Hạn' },
+  { to: '/debt-analysis',       Icon: BarChartIcon,     label: 'Phân tích Công Nợ'       },
+  { to: '/customers',           Icon: PeopleAltIcon,    label: 'Danh sách Khách Hàng'    },
+  { to: '/business-type',       Icon: CategoryIcon,     label: 'Loại Hình Kinh Doanh'    },
+  { to: '/debt-classification', Icon: WarningAmberIcon, label: 'Phân Loại Công Nợ'      },
 ]
 
 export default function Sidebar({ isOpen, onToggle }) {
