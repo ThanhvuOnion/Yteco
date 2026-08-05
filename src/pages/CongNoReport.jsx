@@ -1,12 +1,11 @@
-import { useState, useMemo, useEffect } from 'react'
-import defaultData  from '../data/congno-2026-04.json'
-import monthlyData  from '../data/congno-monthly.json'
+import { useState, useMemo } from 'react'
+import defaultData  from '../data/congno.json'
 import PageHeader   from '../components/PageHeader'
 import KPICard      from '../components/KPICard'
 import ChartCard    from '../components/ChartCard'
 import { FilterBar, SearchInput, SelectFilter } from '../components/FilterBar'
 import {
-  BarChart, Bar, LineChart, Line,
+  BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { CHART_MARGIN, GRID_STROKE, GRID_DASH } from '../utils/chartUtils'
@@ -27,35 +26,41 @@ const BRANCH_COLS = [
 ]
 
 const BRANCH_OPTIONS = [
-  { value: '', label: 'Tất cả CN' },
-  { value: 'VP', label: 'Văn phòng' },
-  { value: 'CT', label: 'Cần Thơ' },
-  { value: 'HN', label: 'Hà Nội' },
-  { value: 'DN', label: 'Đà Nẵng' },
+  { value: '',    label: 'Tất cả CN'  },
+  { value: 'VP',  label: 'Văn phòng'  },
+  { value: 'CT',  label: 'Cần Thơ'   },
+  { value: 'HN',  label: 'Hà Nội'    },
+  { value: 'DN',  label: 'Đà Nẵng'   },
 ]
 
-// ─── Cấu hình tháng ──────────────────────────────────────────────────────────
+const NHOM_OPTIONS = [
+  { value: '',          label: 'Tất cả nhóm' },
+  { value: 'Hợp tác',  label: 'Hợp tác'     },
+  { value: 'Tự doanh', label: 'Tự doanh'    },
+  { value: 'Tính phí', label: 'Tính phí'    },
+]
 
-// Vite phân tích glob tĩnh lúc build — tự động nhận khi user thêm file mới
-const MONTH_FILES = import.meta.glob('../data/congno-????-??.json')
+const PHAN_LOAI_OPTIONS = [
+  { value: '',       label: 'Tất cả loại' },
+  { value: 'Loại 1', label: 'Loại 1'      },
+  { value: 'Loại 2', label: 'Loại 2'      },
+]
 
-// Lấy danh sách file key có sẵn: '../data/congno-2026-04.json' → '2026-04'
-const AVAILABLE_KEYS = new Set(
-  Object.keys(MONTH_FILES).map(p => p.match(/congno-(\d{4}-\d{2})\.json/)?.[1]).filter(Boolean)
-)
+const TINH_TRANG_OPTIONS = [
+  { value: '',        label: 'Tất cả trạng thái' },
+  { value: 'tronhan', label: 'Trong hạn'          },
+  { value: 'qh01',    label: 'QH < 1 tháng'       },
+  { value: 'qh01t',   label: 'QH 1 – 3 tháng'     },
+  { value: 'qh03t',   label: 'QH > 3 tháng'       },
+]
 
-// Kết hợp monthlyData với fileKey & trạng thái có sẵn
-const MONTHS_CONFIG = monthlyData.map(m => {
-  const match = m.month.match(/T(\d+)\/(\d+)/)
-  const fileKey = match ? `${match[2]}-${match[1].padStart(2, '0')}` : null
-  return { ...m, fileKey, available: fileKey ? AVAILABLE_KEYS.has(fileKey) : false }
-})
+const TINH_TRANG_FIELD = {
+  tronhan: 'CloseBal_00',
+  qh01:    'CloseBal_01',
+  qh01t:   'CloseBal_01T',
+  qh03t:   'CloseBal_03T',
+}
 
-const MONTH_OPTIONS = MONTHS_CONFIG.map(m => ({
-  value:    m.fileKey ?? '',
-  label:    m.available ? m.month : `${m.month} (chưa có data)`,
-  disabled: !m.available,
-}))
 
 // ─── Branch mapping (đúng theo notes Excel) ──────────────────────────────────
 // VP  = A01 + bộ phận Kinh Doanh (mặc định A01)
@@ -81,14 +86,14 @@ function getBranchKey(r) {
 // ─── Helpers tính toán ────────────────────────────────────────────────────────
 
 function agg(records, field = 'CloseBal') {
-  const r = { total: 0, VP: 0, CT: 0, HN: 0, DN: 0 }
+  const acc = { total: 0, VP: 0, CT: 0, HN: 0, DN: 0 }
   for (const rec of records) {
     const key = getBranchKey(rec)
     const val = Number(rec[field]) || 0
-    r.total += val
-    if (key) r[key] += val
+    acc.total += val
+    if (key) acc[key] += val
   }
-  return r
+  return acc
 }
 
 const ZERO = { total: 0, VP: 0, CT: 0, HN: 0, DN: 0 }
@@ -129,9 +134,9 @@ function docYear(r) {
 function buildReportRows(records) {
 
   // ── Phân nhóm theo DeptName (groups 1–5) ─────────────────────────────────
-  const isKD   = r => { const d = r.DeptName || ''; return d === 'Phòng Kinh Doanh' || d.startsWith('Chi Nhánh') || d === 'Trình Dược Viên' }
+  const isKD   = r => { const d = (r.DeptName || '').trim(); return d === 'Phòng Kinh Doanh' || d.startsWith('Chi Nhánh') || d === 'Trình Dược Viên' }
   const isTTB  = r => (r.DeptName || '').includes('Trang Thiết')
-  const isXNK  = r => !r.DeptName && !r.nhomLoaiHinh   // không phân bộ phận, không phân nhóm
+  const isXNK  = r => !(r.DeptName || '').trim() && !r.nhomLoaiHinh   // không phân bộ phận, không phân nhóm
 
   const g1_xnk = records.filter(isXNK)
   const g2_ttb = records.filter(isTTB)
@@ -235,7 +240,7 @@ function buildReportRows(records) {
   const b2_rt_gt3 = rateAgg(b2_gt3_kd, b2_tot_kd)
 
   // ─── Builder helper ───────────────────────────────────────────────────────
-  const r = (id, stt, hanTT, noiDung, ma, data, opts = {}) => ({
+  const row = (id, stt, hanTT, noiDung, ma, data, opts = {}) => ({
     id, stt, hanTT, noiDung, ma, data,
     isRate:        opts.isRate        ?? false,
     isToggle:      opts.isToggle      ?? false,
@@ -250,159 +255,159 @@ function buildReportRows(records) {
     // ═══════════════════════════════════════════════════════════════════════
     // PHẦN A – Tổng công nợ phải thu
     // ═══════════════════════════════════════════════════════════════════════
-    r('groupA', 'A', null, 'Tổng công nợ phải thu', null, tot_all,
+    row('groupA', 'A', null, 'Tổng công nợ phải thu', null, tot_all,
       { indent:0, isToggle:true, togglesGroup:'A' }),
 
     // 1 – Xuất nhập khẩu (DeptName empty & nhomLoaiHinh empty)
-    r('g1', '1', null, 'Xuất nhập khẩu', null, tot_g1,
+    row('g1', '1', null, 'Xuất nhập khẩu', null, tot_g1,
       { indent:1, collapseKeys:['A'] }),
 
     // 2 – Trang thiết bị (DeptName = Phòng Trang Thiết Bị)
-    r('g2', '2', null, 'Trang thiết bị', null, tot_g2,
+    row('g2', '2', null, 'Trang thiết bị', null, tot_g2,
       { indent:1, collapseKeys:['A'] }),
 
     // 3 – Tòa nhà (= 0)
-    r('g3', '3', null, 'Tòa nhà', null, { ...ZERO },
+    row('g3', '3', null, 'Tòa nhà', null, { ...ZERO },
       { indent:1, collapseKeys:['A'] }),
 
     // 4 – Khác (= 0)
-    r('g4', '4', null, 'Khác (kho...)', null, { ...ZERO },
+    row('g4', '4', null, 'Khác (kho...)', null, { ...ZERO },
       { indent:1, collapseKeys:['A'] }),
 
     // 5 – Kinh Doanh (header toggle group '5')
-    r('g5', '5', null, 'Kinh Doanh', null, tot_g5,
+    row('g5', '5', null, 'Kinh Doanh', null, tot_g5,
       { indent:1, isToggle:true, togglesGroup:'5', collapseKeys:['A'] }),
 
     // 5.1 Công Ty Hỗ trợ (Loại 2) – toggle 'loai2'
-    r('loai2', '5.1', null, 'Công Ty Hỗ trợ', 'Loại 2', tot_l2,
+    row('loai2', '5.1', null, 'Công Ty Hỗ trợ', 'Loại 2', tot_l2,
       { indent:2, isToggle:true, togglesGroup:'loai2', collapseKeys:['A','5'] }),
 
-    r('th_l2',      '5.1.1',   'Trong hạn thanh toán', 'Công Ty Hỗ trợ', null, th_l2,
+    row('th_l2',      '5.1.1',   'Trong hạn thanh toán', 'Công Ty Hỗ trợ', null, th_l2,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','loai2'] }),
-    r('qh_l2',      '5.1.2',   'Quá hạn thanh toán',  'Công Ty Hỗ trợ', null, qh_l2,
+    row('qh_l2',      '5.1.2',   'Quá hạn thanh toán',  'Công Ty Hỗ trợ', null, qh_l2,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','loai2'] }),
-    r('qh_rate_l2',  null,      'Quá hạn thanh toán',  'Tỷ lệ %',        null, rt_qh_l2,
+    row('qh_rate_l2',  null,      'Quá hạn thanh toán',  'Tỷ lệ %',        null, rt_qh_l2,
       { indent:4, isRate:true,        collapseKeys:['A','5','loai2'] }),
-    r('qh1_l2',     '5.1.2.1', 'Quá hạn < 1 tháng',  'Công Ty Hỗ trợ', null, qh1_l2,
+    row('qh1_l2',     '5.1.2.1', 'Quá hạn < 1 tháng',  'Công Ty Hỗ trợ', null, qh1_l2,
       { indent:3, collapseKeys:['A','5','loai2'] }),
-    r('gt1_l2',     '5.1.2.2', 'Quá hạn > 1 tháng',  'Công Ty Hỗ trợ', null, gt1_l2,
+    row('gt1_l2',     '5.1.2.2', 'Quá hạn > 1 tháng',  'Công Ty Hỗ trợ', null, gt1_l2,
       { indent:3, collapseKeys:['A','5','loai2'] }),
-    r('gt3_l2',     '5.1.2.3', 'Quá hạn > 3 tháng',  'Công Ty Hỗ trợ', 'x', gt3_l2,
+    row('gt3_l2',     '5.1.2.3', 'Quá hạn > 3 tháng',  'Công Ty Hỗ trợ', 'x', gt3_l2,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','loai2'] }),
-    r('gt3_rate_l2', null,      'Quá hạn > 3 tháng',  'Tỷ lệ %',        null, rt_gt3_l2,
+    row('gt3_rate_l2', null,      'Quá hạn > 3 tháng',  'Tỷ lệ %',        null, rt_gt3_l2,
       { indent:4, isRate:true,        collapseKeys:['A','5','loai2'] }),
 
     // 5.2 Tính phí
-    r('tp', '5.2', null, 'Tính Phí', 'Loại 1', tot_tp,
+    row('tp', '5.2', null, 'Tính Phí', 'Loại 1', tot_tp,
       { indent:2, collapseKeys:['A','5'] }),
 
     // 5.3 Lãi hỗ trợ vốn (= 0 trong data)
-    r('lai_htv', '5.3', null, 'Lãi hỗ trợ vốn', 'Loại 1', { ...ZERO },
+    row('lai_htv', '5.3', null, 'Lãi hỗ trợ vốn', 'Loại 1', { ...ZERO },
       { indent:2, collapseKeys:['A','5'] }),
 
     // 5.4 Kinh doanh theo dõi – toggle 'kd'
-    r('kd', '5.4', null, 'Kinh doanh theo dõi', 'Loại 1', tot_kd,
+    row('kd', '5.4', null, 'Kinh doanh theo dõi', 'Loại 1', tot_kd,
       { indent:2, isToggle:true, togglesGroup:'kd', collapseKeys:['A','5'] }),
 
     // 5.4.1 Trong hạn
-    r('th_kd', '5.4.1', 'Trong hạn thanh toán', 'KD phụ trách', null, th_kd,
+    row('th_kd', '5.4.1', 'Trong hạn thanh toán', 'KD phụ trách', null, th_kd,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','kd'] }),
-    r('th_ht',  null,   'Trong hạn thanh toán', 'Hợp tác',      null, th_ht,
+    row('th_ht',  null,   'Trong hạn thanh toán', 'Hợp tác',      null, th_ht,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('th_td',  null,   'Trong hạn thanh toán', 'Tự doanh',     null, th_td,
+    row('th_td',  null,   'Trong hạn thanh toán', 'Tự doanh',     null, th_td,
       { indent:4, collapseKeys:['A','5','kd'] }),
 
     // 5.4.2 Quá hạn chung
-    r('qh_kd',  '5.4.2', 'Quá hạn thanh toán', 'KD phụ trách', null, qh_kd,
+    row('qh_kd',  '5.4.2', 'Quá hạn thanh toán', 'KD phụ trách', null, qh_kd,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','kd'] }),
-    r('qh_ht',   null,   'Quá hạn thanh toán', 'Hợp tác',      null, qh_ht,
+    row('qh_ht',   null,   'Quá hạn thanh toán', 'Hợp tác',      null, qh_ht,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('qh_td',   null,   'Quá hạn thanh toán', 'Tự doanh',     null, qh_td,
+    row('qh_td',   null,   'Quá hạn thanh toán', 'Tự doanh',     null, qh_td,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('qh_rate', null,   'Quá hạn thanh toán', 'Tỷ lệ %',      null, rt_qh,
+    row('qh_rate', null,   'Quá hạn thanh toán', 'Tỷ lệ %',      null, rt_qh,
       { indent:4, isRate:true, collapseKeys:['A','5','kd'] }),
 
     // 5.4.2.1 QH < 1 tháng
-    r('qh1_kd',  '5.4.2.1', 'Quá hạn < 1 tháng', 'KD phụ trách', null, qh1_kd,
+    row('qh1_kd',  '5.4.2.1', 'Quá hạn < 1 tháng', 'KD phụ trách', null, qh1_kd,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','kd'] }),
-    r('qh1_ht',   null,     'Quá hạn < 1 tháng', 'Hợp tác',      null, qh1_ht,
+    row('qh1_ht',   null,     'Quá hạn < 1 tháng', 'Hợp tác',      null, qh1_ht,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('qh1_td',   null,     'Quá hạn < 1 tháng', 'Tự doanh',     null, qh1_td,
+    row('qh1_td',   null,     'Quá hạn < 1 tháng', 'Tự doanh',     null, qh1_td,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('qh1_rate', null,     'Quá hạn < 1 tháng', 'Tỷ lệ %',      null, rt_qh1,
+    row('qh1_rate', null,     'Quá hạn < 1 tháng', 'Tỷ lệ %',      null, rt_qh1,
       { indent:4, isRate:true, collapseKeys:['A','5','kd'] }),
 
     // 5.4.2.1 QH > 1 tháng
-    r('gt1_kd',  '5.4.2.1', 'Quá hạn > 1 tháng', 'KD phụ trách', 'x', gt1_kd,
+    row('gt1_kd',  '5.4.2.1', 'Quá hạn > 1 tháng', 'KD phụ trách', 'x', gt1_kd,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','kd'] }),
-    r('gt1_ht',   null,     'Quá hạn > 1 tháng', 'Hợp tác',      'x', gt1_ht,
+    row('gt1_ht',   null,     'Quá hạn > 1 tháng', 'Hợp tác',      'x', gt1_ht,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('gt1_td',   null,     'Quá hạn > 1 tháng', 'Tự doanh',     null, gt1_td,
+    row('gt1_td',   null,     'Quá hạn > 1 tháng', 'Tự doanh',     null, gt1_td,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('gt1_rate', null,     'Quá hạn > 1 tháng', 'Tỷ lệ %',      null, rt_gt1,
+    row('gt1_rate', null,     'Quá hạn > 1 tháng', 'Tỷ lệ %',      null, rt_gt1,
       { indent:4, isRate:true, collapseKeys:['A','5','kd'] }),
 
     // 5.4.2.2 QH > 3 tháng
-    r('gt3_kd',  '5.4.2.2', 'Quá hạn > 3 tháng', 'KD phụ trách', 'x', gt3_kd,
+    row('gt3_kd',  '5.4.2.2', 'Quá hạn > 3 tháng', 'KD phụ trách', 'x', gt3_kd,
       { indent:3, isSectionHead:true, collapseKeys:['A','5','kd'] }),
-    r('gt3_ht',   null,     'Quá hạn > 3 tháng', 'Hợp tác',      'x', gt3_ht,
+    row('gt3_ht',   null,     'Quá hạn > 3 tháng', 'Hợp tác',      'x', gt3_ht,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('gt3_td',   null,     'Quá hạn > 3 tháng', 'Tự doanh',     null, gt3_td,
+    row('gt3_td',   null,     'Quá hạn > 3 tháng', 'Tự doanh',     null, gt3_td,
       { indent:4, collapseKeys:['A','5','kd'] }),
-    r('gt3_rate', null,     'Quá hạn > 3 tháng', 'Tỷ lệ %',      null, rt_gt3,
+    row('gt3_rate', null,     'Quá hạn > 3 tháng', 'Tỷ lệ %',      null, rt_gt3,
       { indent:4, isRate:true, collapseKeys:['A','5','kd'] }),
 
     // ═══════════════════════════════════════════════════════════════════════
     // PHẦN B – Chi Tiết Công nợ KD phụ trách
     // ═══════════════════════════════════════════════════════════════════════
-    r('groupB', 'B', null, 'Chi Tiết Công nợ KD phụ trách', 'Loại 1', tot_kd,
+    row('groupB', 'B', null, 'Chi Tiết Công nợ KD phụ trách', 'Loại 1', tot_kd,
       { indent:0, isToggle:true, togglesGroup:'B' }),
 
-    r('b1', '1', 'Trước năm 2022',        'KD phụ trách', null, tot_b1,
+    row('b1', '1', 'Trước năm 2022',        'KD phụ trách', null, tot_b1,
       { indent:1, collapseKeys:['B'] }),
-    r('b2', '2', 'Từ năm 2022 trở về sau', 'KD phụ trách', null, tot_b2,
+    row('b2', '2', 'Từ năm 2022 trở về sau', 'KD phụ trách', null, tot_b2,
       { indent:1, isSectionHead:true, collapseKeys:['B'] }),
 
-    r('b2_th',      '2.1',    'Trong hạn thanh toán', 'Trong hạn',    null, b2_th_kd,
+    row('b2_th',      '2.1',    'Trong hạn thanh toán', 'Trong hạn',    null, b2_th_kd,
       { indent:2, collapseKeys:['B'] }),
 
-    r('b2_qh_kd',  '2.2',    'Quá hạn thanh toán',  'KD phụ trách', null, b2_qh_kd,
+    row('b2_qh_kd',  '2.2',    'Quá hạn thanh toán',  'KD phụ trách', null, b2_qh_kd,
       { indent:2, isSectionHead:true, collapseKeys:['B'] }),
-    r('b2_qh_ht',   null,    'Quá hạn thanh toán',  'Hợp tác',      null, b2_qh_ht,
+    row('b2_qh_ht',   null,    'Quá hạn thanh toán',  'Hợp tác',      null, b2_qh_ht,
       { indent:3, collapseKeys:['B'] }),
-    r('b2_qh_td',   null,    'Quá hạn thanh toán',  'Tự doanh',     null, b2_qh_td,
+    row('b2_qh_td',   null,    'Quá hạn thanh toán',  'Tự doanh',     null, b2_qh_td,
       { indent:3, collapseKeys:['B'] }),
-    r('b2_qh_rate', null,    'Quá hạn thanh toán',  'Tỷ lệ %',      null, b2_rt_qh,
+    row('b2_qh_rate', null,    'Quá hạn thanh toán',  'Tỷ lệ %',      null, b2_rt_qh,
       { indent:3, isRate:true, collapseKeys:['B'] }),
 
-    r('b2_qh1',    '2.2.1a', 'QH < 1 tháng',        'KD phụ trách', null, b2_qh1_kd,
+    row('b2_qh1',    '2.2.1a', 'QH < 1 tháng',        'KD phụ trách', null, b2_qh1_kd,
       { indent:2, collapseKeys:['B'] }),
 
-    r('b2_gt1_kd', '2.2.2a', 'QH ≥ 1 tháng',        'KD phụ trách', null, b2_gt1_kd,
+    row('b2_gt1_kd', '2.2.2a', 'QH ≥ 1 tháng',        'KD phụ trách', null, b2_gt1_kd,
       { indent:2, isSectionHead:true, collapseKeys:['B'] }),
-    r('b2_gt1_ht',  null,    'QH ≥ 1 tháng',        'Hợp tác',      null, b2_gt1_ht,
+    row('b2_gt1_ht',  null,    'QH ≥ 1 tháng',        'Hợp tác',      null, b2_gt1_ht,
       { indent:3, collapseKeys:['B'] }),
-    r('b2_gt1_td',  null,    'QH ≥ 1 tháng',        'Tự doanh',     null, b2_gt1_td,
+    row('b2_gt1_td',  null,    'QH ≥ 1 tháng',        'Tự doanh',     null, b2_gt1_td,
       { indent:3, collapseKeys:['B'] }),
-    r('b2_gt1_rate',null,    'QH ≥ 1 tháng',        'Tỷ lệ %',      null, b2_rt_gt1,
+    row('b2_gt1_rate',null,    'QH ≥ 1 tháng',        'Tỷ lệ %',      null, b2_rt_gt1,
       { indent:3, isRate:true, collapseKeys:['B'] }),
 
-    r('b2_lt3',    '2.2.1b', 'QH < 3 tháng',        'KD phụ trách', null, b2_lt3_kd,
+    row('b2_lt3',    '2.2.1b', 'QH < 3 tháng',        'KD phụ trách', null, b2_lt3_kd,
       { indent:2, collapseKeys:['B'] }),
 
-    r('b2_gt3_kd', '2.2.2b', 'QH ≥ 3 tháng',        'KD phụ trách', 'x', b2_gt3_kd,
+    row('b2_gt3_kd', '2.2.2b', 'QH ≥ 3 tháng',        'KD phụ trách', 'x', b2_gt3_kd,
       { indent:2, isSectionHead:true, collapseKeys:['B'] }),
-    r('b2_gt3_ht',  null,    'QH ≥ 3 tháng',        'Hợp tác',      'x', b2_gt3_ht,
+    row('b2_gt3_ht',  null,    'QH ≥ 3 tháng',        'Hợp tác',      'x', b2_gt3_ht,
       { indent:3, collapseKeys:['B'] }),
-    r('b2_gt3_td',  null,    'QH ≥ 3 tháng',        'Tự doanh',     null, b2_gt3_td,
+    row('b2_gt3_td',  null,    'QH ≥ 3 tháng',        'Tự doanh',     null, b2_gt3_td,
       { indent:3, collapseKeys:['B'] }),
-    r('b2_gt3_rate',null,    'QH ≥ 3 tháng',        'Tỷ lệ %',      null, b2_rt_gt3,
+    row('b2_gt3_rate',null,    'QH ≥ 3 tháng',        'Tỷ lệ %',      null, b2_rt_gt3,
       { indent:3, isRate:true, collapseKeys:['B'] }),
 
     // ═══════════════════════════════════════════════════════════════════════
     // TỔNG – cuối bảng (tương đương "Tổng 131" trong Excel)
     // ═══════════════════════════════════════════════════════════════════════
-    r('tong', null, null, 'Tổng công nợ phải thu (131)', null, tot_all,
+    row('tong', null, null, 'Tổng công nợ phải thu (131)', null, tot_all,
       { indent:0, isSummary:true }),
   ]
 }
@@ -454,78 +459,6 @@ function BranchRateChart({ rows }) {
 }
 
 // ─── Monthly trend charts ─────────────────────────────────────────────────────
-
-function MonthlyTrendCharts({ activeBranch, selectedMonth }) {
-  const brKey = activeBranch || 'total'
-
-  // Đánh dấu điểm đang được chọn
-  const activeCfg = MONTHS_CONFIG.find(m => m.fileKey === selectedMonth)
-
-  const trendData = monthlyData.map(m => {
-    const cfg = MONTHS_CONFIG.find(c => c.short === m.short)
-    const isActive = cfg?.fileKey === selectedMonth
-    return {
-      month:        m.short,
-      'Tổng 131':   m.tong131?.[brKey]    != null ? +(m.tong131[brKey]    / 1e9).toFixed(1) : null,
-      'KD theo dõi': m.kd_theo_doi?.[brKey] != null ? +(m.kd_theo_doi[brKey] / 1e9).toFixed(1) : null,
-      _active: isActive,
-    }
-  })
-
-  const rateData = monthlyData.map(m => {
-    const cfg = MONTHS_CONFIG.find(c => c.short === m.short)
-    const isActive = cfg?.fileKey === selectedMonth
-    return {
-      month:      m.short,
-      'QH chung': m.qh_rate?.[brKey]     != null ? +(m.qh_rate[brKey]     * 100).toFixed(2) : null,
-      'QH >3 th': m.qh_gt3_rate?.[brKey] != null ? +(m.qh_gt3_rate[brKey] * 100).toFixed(2) : null,
-      _active: isActive,
-    }
-  })
-
-  const branchLabel = activeBranch
-    ? BRANCH_COLS.find(b => b.key === activeBranch)?.label
-    : 'Tất cả chi nhánh'
-
-  // Custom dot: phóng to điểm đang xem
-  const ActiveDot = (color) => (props) => {
-    const { cx, cy, payload } = props
-    if (!payload._active) return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={3} fill={color} />
-    return <circle key={`dot-active-${cx}-${cy}`} cx={cx} cy={cy} r={6} fill={color} stroke="#fff" strokeWidth={2} />
-  }
-
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <ChartCard title={`Xu hướng Công nợ theo tháng — ${branchLabel}${activeCfg ? ` · Đang xem: ${activeCfg.month}` : ''}`}>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={trendData} margin={CHART_MARGIN}>
-            <CartesianGrid strokeDasharray={GRID_DASH} stroke={GRID_STROKE} />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => `${v}tỷ`} tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v, name) => [`${v} tỷ`, name]} />
-            <Legend />
-            <Line type="monotone" dataKey="Tổng 131"    stroke="#3b82f6" strokeWidth={2} dot={ActiveDot('#3b82f6')} connectNulls />
-            <Line type="monotone" dataKey="KD theo dõi" stroke="#10b981" strokeWidth={2} dot={ActiveDot('#10b981')} connectNulls />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      <ChartCard title={`Xu hướng Tỷ lệ Quá hạn theo tháng — ${branchLabel}${activeCfg ? ` · Đang xem: ${activeCfg.month}` : ''}`}>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={rateData} margin={CHART_MARGIN}>
-            <CartesianGrid strokeDasharray={GRID_DASH} stroke={GRID_STROKE} />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v, name) => [`${v}%`, name]} />
-            <Legend />
-            <Line type="monotone" dataKey="QH chung" stroke="#f59e0b" strokeWidth={2} dot={ActiveDot('#f59e0b')} connectNulls />
-            <Line type="monotone" dataKey="QH >3 th" stroke="#ef4444" strokeWidth={2} dot={ActiveDot('#ef4444')} connectNulls />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartCard>
-    </div>
-  )
-}
 
 // ─── KPI cards ────────────────────────────────────────────────────────────────
 
@@ -665,74 +598,61 @@ function ReportTable({ rows, activeBranch, search }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CongNoReport() {
-  const [branch,       setBranch]       = useState('')
-  const [search,       setSearch]       = useState('')
-  const [selectedMonth, setSelectedMonth] = useState('2026-04')   // default = tháng có sẵn
-  const [monthRecords, setMonthRecords] = useState(defaultData)   // khởi tạo ngay, không cần load
-  const [isLoading,    setIsLoading]    = useState(false)
+  const [branch,        setBranch]        = useState('')
+  const [search,        setSearch]        = useState('')
+  const [nhom,          setNhom]          = useState('')
+  const [phanLoai,      setPhanLoai]      = useState('')
+  const [tinhTrang,     setTinhTrang]     = useState('')
 
-  // Dynamic load khi user đổi tháng
-  useEffect(() => {
-    if (selectedMonth === '2026-04') {
-      setMonthRecords(defaultData)
-      return
-    }
-    const filePath = `../data/congno-${selectedMonth}.json`
-    const loader   = MONTH_FILES[filePath]
-    if (!loader) return   // file chưa được export, bỏ qua
-    setIsLoading(true)
-    loader()
-      .then(m => { setMonthRecords(m.default); setIsLoading(false) })
-      .catch(() => setIsLoading(false))
-  }, [selectedMonth])
-
-  const hasActive = Boolean(branch || search)
-  function handleReset() { setBranch(''); setSearch(''); setSelectedMonth('2026-04') }
-
-  const activeMthCfg   = MONTHS_CONFIG.find(m => m.fileKey === selectedMonth)
-  const monthLabel     = activeMthCfg?.month ?? selectedMonth
-  const branchLabel    = branch ? BRANCH_COLS.find(b => b.key === branch)?.label : 'Tất cả chi nhánh'
+  const hasActive = Boolean(branch || search || nhom || phanLoai || tinhTrang)
+  function handleReset() { setBranch(''); setSearch(''); setNhom(''); setPhanLoai(''); setTinhTrang('') }
 
   const filteredRecords = useMemo(() => {
-    if (!branch) return monthRecords
-    return monthRecords.filter(r => getBranchKey(r) === branch)
-  }, [branch, monthRecords])
+    let recs = defaultData
+    if (branch)    recs = recs.filter(r => getBranchKey(r) === branch)
+    if (nhom)      recs = recs.filter(r => r.nhomLoaiHinh === nhom)
+    if (phanLoai)  recs = recs.filter(r => (r.phanLoaiCongNo || '') === phanLoai)
+    if (tinhTrang) recs = recs.filter(r => (Number(r[TINH_TRANG_FIELD[tinhTrang]]) || 0) > 0)
+    return recs
+  }, [branch, nhom, phanLoai, tinhTrang])
 
   const rows = useMemo(() => buildReportRows(filteredRecords), [filteredRecords])
+
+  const branchLabel = branch ? BRANCH_COLS.find(b => b.key === branch)?.label : 'Tất cả chi nhánh'
+  const subtitleParts = [
+    'Dữ liệu: 06/2026',
+    `${filteredRecords.length.toLocaleString()} / ${defaultData.length.toLocaleString()} giao dịch`,
+    branchLabel,
+    nhom      || null,
+    phanLoai  || null,
+    tinhTrang ? TINH_TRANG_OPTIONS.find(o => o.value === tinhTrang)?.label : null,
+  ].filter(Boolean)
 
   return (
     <div className="p-6 space-y-6">
       <PageHeader
         title="BÁO CÁO TỶ LỆ CÔNG NỢ QUÁ HẠN KHỐI KINH DOANH"
-        subtitle={`Tháng: ${monthLabel} · ${monthRecords.length.toLocaleString()} giao dịch · ${branchLabel}`}
+        subtitle={subtitleParts.join(' · ')}
       />
 
       <KpiSection rows={rows} activeBranch={branch} />
 
-      <MonthlyTrendCharts activeBranch={branch} selectedMonth={selectedMonth} />
-
       <BranchRateChart rows={rows} />
 
       <ChartCard
-        title={`Chi Tiết Tỷ Lệ Công Nợ Quá Hạn — ${monthLabel}`}
+        title="Chi Tiết Tỷ Lệ Công Nợ Quá Hạn — 06/2026"
         action={
           <FilterBar hasActiveFilters={hasActive} onReset={handleReset}>
             <SearchInput value={search} onChange={setSearch} placeholder="Tìm STT, nội dung..." width="w-48" />
-            <SelectFilter
-              value={selectedMonth}
-              onChange={setSelectedMonth}
-              options={MONTH_OPTIONS}
-              placeholder="Chọn tháng"
-            />
-            <SelectFilter value={branch} onChange={setBranch} options={BRANCH_OPTIONS} placeholder="Tất cả CN" />
+            <SelectFilter value={branch}    onChange={setBranch}    options={BRANCH_OPTIONS}      placeholder="Tất cả CN"          />
+            <SelectFilter value={nhom}      onChange={setNhom}      options={NHOM_OPTIONS}        placeholder="Tất cả nhóm"        />
+            <SelectFilter value={phanLoai}  onChange={setPhanLoai}  options={PHAN_LOAI_OPTIONS}   placeholder="Tất cả loại"        />
+            <SelectFilter value={tinhTrang} onChange={setTinhTrang} options={TINH_TRANG_OPTIONS}  placeholder="Tất cả trạng thái" />
           </FilterBar>
         }
         noPadding
       >
-        {isLoading
-          ? <p className="text-center text-gray-400 py-10 text-sm">Đang tải dữ liệu tháng {monthLabel}…</p>
-          : <ReportTable rows={rows} activeBranch={branch} search={search} />
-        }
+        <ReportTable rows={rows} activeBranch={branch} search={search} />
       </ChartCard>
     </div>
   )
