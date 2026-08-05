@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import rawData      from '../data/congno.json'
+import { useState, useMemo, useEffect } from 'react'
+import defaultData  from '../data/congno-2026-04.json'
 import monthlyData  from '../data/congno-monthly.json'
 import PageHeader   from '../components/PageHeader'
 import KPICard      from '../components/KPICard'
@@ -33,6 +33,29 @@ const BRANCH_OPTIONS = [
   { value: 'HN', label: 'Hà Nội' },
   { value: 'DN', label: 'Đà Nẵng' },
 ]
+
+// ─── Cấu hình tháng ──────────────────────────────────────────────────────────
+
+// Vite phân tích glob tĩnh lúc build — tự động nhận khi user thêm file mới
+const MONTH_FILES = import.meta.glob('../data/congno-????-??.json')
+
+// Lấy danh sách file key có sẵn: '../data/congno-2026-04.json' → '2026-04'
+const AVAILABLE_KEYS = new Set(
+  Object.keys(MONTH_FILES).map(p => p.match(/congno-(\d{4}-\d{2})\.json/)?.[1]).filter(Boolean)
+)
+
+// Kết hợp monthlyData với fileKey & trạng thái có sẵn
+const MONTHS_CONFIG = monthlyData.map(m => {
+  const match = m.month.match(/T(\d+)\/(\d+)/)
+  const fileKey = match ? `${match[2]}-${match[1].padStart(2, '0')}` : null
+  return { ...m, fileKey, available: fileKey ? AVAILABLE_KEYS.has(fileKey) : false }
+})
+
+const MONTH_OPTIONS = MONTHS_CONFIG.map(m => ({
+  value:    m.fileKey ?? '',
+  label:    m.available ? m.month : `${m.month} (chưa có data)`,
+  disabled: !m.available,
+}))
 
 // ─── Branch mapping (đúng theo notes Excel) ──────────────────────────────────
 // VP  = A01 + bộ phận Kinh Doanh (mặc định A01)
@@ -432,28 +455,48 @@ function BranchRateChart({ rows }) {
 
 // ─── Monthly trend charts ─────────────────────────────────────────────────────
 
-function MonthlyTrendCharts({ activeBranch }) {
+function MonthlyTrendCharts({ activeBranch, selectedMonth }) {
   const brKey = activeBranch || 'total'
 
-  const trendData = monthlyData.map(m => ({
-    month:   m.short,
-    'Tổng 131':   m.tong131?.[brKey] != null ? +(m.tong131[brKey] / 1e9).toFixed(1) : null,
-    'KD theo dõi': m.kd_theo_doi?.[brKey] != null ? +(m.kd_theo_doi[brKey] / 1e9).toFixed(1) : null,
-  }))
+  // Đánh dấu điểm đang được chọn
+  const activeCfg = MONTHS_CONFIG.find(m => m.fileKey === selectedMonth)
 
-  const rateData = monthlyData.map(m => ({
-    month:     m.short,
-    'QH chung':  m.qh_rate?.[brKey] != null ? +(m.qh_rate[brKey] * 100).toFixed(2) : null,
-    'QH >3 th':  m.qh_gt3_rate?.[brKey] != null ? +(m.qh_gt3_rate[brKey] * 100).toFixed(2) : null,
-  }))
+  const trendData = monthlyData.map(m => {
+    const cfg = MONTHS_CONFIG.find(c => c.short === m.short)
+    const isActive = cfg?.fileKey === selectedMonth
+    return {
+      month:        m.short,
+      'Tổng 131':   m.tong131?.[brKey]    != null ? +(m.tong131[brKey]    / 1e9).toFixed(1) : null,
+      'KD theo dõi': m.kd_theo_doi?.[brKey] != null ? +(m.kd_theo_doi[brKey] / 1e9).toFixed(1) : null,
+      _active: isActive,
+    }
+  })
+
+  const rateData = monthlyData.map(m => {
+    const cfg = MONTHS_CONFIG.find(c => c.short === m.short)
+    const isActive = cfg?.fileKey === selectedMonth
+    return {
+      month:      m.short,
+      'QH chung': m.qh_rate?.[brKey]     != null ? +(m.qh_rate[brKey]     * 100).toFixed(2) : null,
+      'QH >3 th': m.qh_gt3_rate?.[brKey] != null ? +(m.qh_gt3_rate[brKey] * 100).toFixed(2) : null,
+      _active: isActive,
+    }
+  })
 
   const branchLabel = activeBranch
     ? BRANCH_COLS.find(b => b.key === activeBranch)?.label
     : 'Tất cả chi nhánh'
 
+  // Custom dot: phóng to điểm đang xem
+  const ActiveDot = (color) => (props) => {
+    const { cx, cy, payload } = props
+    if (!payload._active) return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={3} fill={color} />
+    return <circle key={`dot-active-${cx}-${cy}`} cx={cx} cy={cy} r={6} fill={color} stroke="#fff" strokeWidth={2} />
+  }
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <ChartCard title={`Xu hướng Công nợ theo tháng — ${branchLabel}`}>
+      <ChartCard title={`Xu hướng Công nợ theo tháng — ${branchLabel}${activeCfg ? ` · Đang xem: ${activeCfg.month}` : ''}`}>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={trendData} margin={CHART_MARGIN}>
             <CartesianGrid strokeDasharray={GRID_DASH} stroke={GRID_STROKE} />
@@ -461,13 +504,13 @@ function MonthlyTrendCharts({ activeBranch }) {
             <YAxis tickFormatter={v => `${v}tỷ`} tick={{ fontSize: 11 }} />
             <Tooltip formatter={(v, name) => [`${v} tỷ`, name]} />
             <Legend />
-            <Line type="monotone" dataKey="Tổng 131"    stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-            <Line type="monotone" dataKey="KD theo dõi" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+            <Line type="monotone" dataKey="Tổng 131"    stroke="#3b82f6" strokeWidth={2} dot={ActiveDot('#3b82f6')} connectNulls />
+            <Line type="monotone" dataKey="KD theo dõi" stroke="#10b981" strokeWidth={2} dot={ActiveDot('#10b981')} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title={`Xu hướng Tỷ lệ Quá hạn theo tháng — ${branchLabel}`}>
+      <ChartCard title={`Xu hướng Tỷ lệ Quá hạn theo tháng — ${branchLabel}${activeCfg ? ` · Đang xem: ${activeCfg.month}` : ''}`}>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={rateData} margin={CHART_MARGIN}>
             <CartesianGrid strokeDasharray={GRID_DASH} stroke={GRID_STROKE} />
@@ -475,8 +518,8 @@ function MonthlyTrendCharts({ activeBranch }) {
             <YAxis tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
             <Tooltip formatter={(v, name) => [`${v}%`, name]} />
             <Legend />
-            <Line type="monotone" dataKey="QH chung" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-            <Line type="monotone" dataKey="QH >3 th" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+            <Line type="monotone" dataKey="QH chung" stroke="#f59e0b" strokeWidth={2} dot={ActiveDot('#f59e0b')} connectNulls />
+            <Line type="monotone" dataKey="QH >3 th" stroke="#ef4444" strokeWidth={2} dot={ActiveDot('#ef4444')} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -622,46 +665,74 @@ function ReportTable({ rows, activeBranch, search }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CongNoReport() {
-  const [branch, setBranch] = useState('')
-  const [search, setSearch] = useState('')
+  const [branch,       setBranch]       = useState('')
+  const [search,       setSearch]       = useState('')
+  const [selectedMonth, setSelectedMonth] = useState('2026-04')   // default = tháng có sẵn
+  const [monthRecords, setMonthRecords] = useState(defaultData)   // khởi tạo ngay, không cần load
+  const [isLoading,    setIsLoading]    = useState(false)
+
+  // Dynamic load khi user đổi tháng
+  useEffect(() => {
+    if (selectedMonth === '2026-04') {
+      setMonthRecords(defaultData)
+      return
+    }
+    const filePath = `../data/congno-${selectedMonth}.json`
+    const loader   = MONTH_FILES[filePath]
+    if (!loader) return   // file chưa được export, bỏ qua
+    setIsLoading(true)
+    loader()
+      .then(m => { setMonthRecords(m.default); setIsLoading(false) })
+      .catch(() => setIsLoading(false))
+  }, [selectedMonth])
 
   const hasActive = Boolean(branch || search)
-  function handleReset() { setBranch(''); setSearch('') }
+  function handleReset() { setBranch(''); setSearch(''); setSelectedMonth('2026-04') }
 
-  // Lọc theo chi nhánh trước khi tính toán
+  const activeMthCfg   = MONTHS_CONFIG.find(m => m.fileKey === selectedMonth)
+  const monthLabel     = activeMthCfg?.month ?? selectedMonth
+  const branchLabel    = branch ? BRANCH_COLS.find(b => b.key === branch)?.label : 'Tất cả chi nhánh'
+
   const filteredRecords = useMemo(() => {
-    if (!branch) return rawData
-    return rawData.filter(r => getBranchKey(r) === branch)
-  }, [branch])
+    if (!branch) return monthRecords
+    return monthRecords.filter(r => getBranchKey(r) === branch)
+  }, [branch, monthRecords])
 
   const rows = useMemo(() => buildReportRows(filteredRecords), [filteredRecords])
-
-  const branchLabel = branch ? BRANCH_COLS.find(b => b.key === branch)?.label : 'Tất cả chi nhánh'
 
   return (
     <div className="p-6 space-y-6">
       <PageHeader
         title="BÁO CÁO TỶ LỆ CÔNG NỢ QUÁ HẠN KHỐI KINH DOANH"
-        subtitle={`Nguồn: congno.json · ${rawData.length.toLocaleString()} giao dịch · ${branchLabel}`}
+        subtitle={`Tháng: ${monthLabel} · ${monthRecords.length.toLocaleString()} giao dịch · ${branchLabel}`}
       />
 
       <KpiSection rows={rows} activeBranch={branch} />
 
-      <MonthlyTrendCharts activeBranch={branch} />
+      <MonthlyTrendCharts activeBranch={branch} selectedMonth={selectedMonth} />
 
       <BranchRateChart rows={rows} />
 
       <ChartCard
-        title="Chi Tiết Tỷ Lệ Công Nợ Quá Hạn"
+        title={`Chi Tiết Tỷ Lệ Công Nợ Quá Hạn — ${monthLabel}`}
         action={
           <FilterBar hasActiveFilters={hasActive} onReset={handleReset}>
             <SearchInput value={search} onChange={setSearch} placeholder="Tìm STT, nội dung..." width="w-48" />
+            <SelectFilter
+              value={selectedMonth}
+              onChange={setSelectedMonth}
+              options={MONTH_OPTIONS}
+              placeholder="Chọn tháng"
+            />
             <SelectFilter value={branch} onChange={setBranch} options={BRANCH_OPTIONS} placeholder="Tất cả CN" />
           </FilterBar>
         }
         noPadding
       >
-        <ReportTable rows={rows} activeBranch={branch} search={search} />
+        {isLoading
+          ? <p className="text-center text-gray-400 py-10 text-sm">Đang tải dữ liệu tháng {monthLabel}…</p>
+          : <ReportTable rows={rows} activeBranch={branch} search={search} />
+        }
       </ChartCard>
     </div>
   )
